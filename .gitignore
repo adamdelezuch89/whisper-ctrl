@@ -1,0 +1,7 @@
+.env
+.dump-outputs
+__pycache__
+venv
+AppDir
+.build_tools
+Whisper-Ctrl-*.AppImage
