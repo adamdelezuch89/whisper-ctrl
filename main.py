@@ -58,6 +58,7 @@ class WhisperCtrl:
         self.recording_event = threading.Event()
         self.stop_event = threading.Event()
         self.audio_data: Optional[np.ndarray] = None
+        self.cancelled = False  # Flag to track if current operation was cancelled
 
         print("🚀 Initializing Whisper model... (this may take a moment on the first run)")
         self.send_notification("Whisper-Ctrl", "Starting Whisper model... (this may take a moment on the first run)")
@@ -98,10 +99,24 @@ class WhisperCtrl:
         if time_diff < DOUBLE_TAP_THRESHOLD_S:
             self.handle_double_tap()
 
+    def handle_escape(self):
+        """Handle Escape key press to cancel current operation."""
+        if self.state == State.RECORDING:
+            print("❌ Recording cancelled by user (Escape pressed)")
+            self.cancelled = True
+            self.recording_event.set()  # Stop recording
+            self.state = State.IDLE
+        elif self.state == State.PROCESSING:
+            print("❌ Processing cancelled by user (Escape pressed)")
+            self.cancelled = True
+            self.state = State.IDLE  # Reset state immediately to allow new operations
+
     def setup_keyboard_listener(self):
         def on_press(key):
             if key in {keyboard.Key.ctrl_l, keyboard.Key.ctrl_r}:
                 self.on_ctrl_press()
+            elif key == keyboard.Key.esc:
+                self.handle_escape()
         return keyboard.Listener(on_press=on_press)
 
     def handle_double_tap(self):
@@ -120,6 +135,7 @@ class WhisperCtrl:
 
     def start_recording(self):
         print("🎙️ Starting recording...")
+        self.cancelled = False  # Reset cancelled flag for new operation
         self.recording_event.clear()
         self.audio_data = None
         self.recording_thread = threading.Thread(target=self.record_audio)
@@ -136,6 +152,11 @@ class WhisperCtrl:
                 while not self.recording_event.is_set():
                     data, _ = stream.read(1024)
                     frames.append(data.copy())
+
+            # Check if recording was cancelled
+            if self.cancelled:
+                self.audio_data = None
+                return
 
             if frames:
                 self.audio_data = np.concatenate(frames, axis=0)
@@ -159,11 +180,17 @@ class WhisperCtrl:
             return
 
         try:
+            # Check if operation was cancelled before processing
+            if self.cancelled:
+                print("❌ Processing cancelled, skipping transcription.")
+                self.state = State.IDLE
+                return
+
             # Since we are recording at 16kHz, no resampling is needed.
             audio_float32 = self.audio_data.flatten()
 
             print("🤖 Starting local transcription...")
-            segments, _ = self.model.transcribe(
+            segments_generator, _ = self.model.transcribe(
                 audio_float32,
                 language=LANGUAGE,
                 beam_size=5,
@@ -171,10 +198,24 @@ class WhisperCtrl:
                 vad_parameters=VAD_PARAMETERS
             )
 
-            transcribed_text = "".join(segment.text for segment in segments).strip()
+            # Iterate through segments and check for cancellation after each one
+            transcribed_segments = []
+            for segment in segments_generator:
+                # Check if operation was cancelled during transcription
+                if self.cancelled:
+                    print("❌ Processing was cancelled during transcription.")
+                    self.state = State.IDLE
+                    return
+                transcribed_segments.append(segment)
+
+            transcribed_text = "".join(segment.text for segment in transcribed_segments).strip()
 
             print(f"✅ Received transcription: '{transcribed_text}'")
             if transcribed_text:
+                # Final check for cancellation before pasting
+                if self.cancelled:
+                    print("❌ Text injection cancelled (operation was cancelled)")
+                    return
                 self.inject_text(transcribed_text)
             else:
                 print("📝 Received an empty transcription, skipping paste.")
@@ -184,6 +225,7 @@ class WhisperCtrl:
         finally:
             self.state = State.IDLE
             self.audio_data = None
+            self.cancelled = False  # Reset cancelled flag for clean state
 
     def inject_text(self, text: str):
         try:
@@ -204,6 +246,7 @@ class WhisperCtrl:
     def run(self):
         print("🚀 Starting Whisper-Ctrl in local mode...")
         print("👂 Listening for a double-press of the Ctrl key...")
+        print("🚪 Press Escape to cancel recording or processing...")
         print("ℹ️ Press Ctrl+C to exit.")
 
         listener = self.setup_keyboard_listener()
