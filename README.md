@@ -2,70 +2,70 @@
 
 Whisper-Ctrl is a lightweight voice dictation application for Linux that leverages the power of your **local GPU** for lightning-fast speech-to-text transcription. By using the `faster-whisper` library, the application operates entirely offline, with no reliance on external APIs.
 
-The application is activated by a global hotkey (a quick double-press of the `Ctrl` key), and the entire process provides feedback via system notifications (if installed).
+The application is activated by a global hotkey (a quick double-press of the `Ctrl` key), and the entire process provides clear, on-screen visual feedback via an indicator that follows your cursor.
 
 ## Features
 
 - **Local GPU Transcription**: All processing happens on your local machine, ensuring both privacy and speed.
-- **On-Demand Activation**: Recording starts and stops with a quick, double-press of the left `Ctrl` key.
+- **On-Demand Activation**: Recording starts and stops with a quick, double-press of the `Ctrl` key.
 - **Contextual Pasting**: The transcribed text is automatically pasted at your current cursor position.
-- **System Feedback**: Stay informed of the current status (recording, processing) through system notifications.
 - **High Performance**: Powered by `faster-whisper` for up to 4x faster transcription than the original model, with lower VRAM consumption.
 
 ## System Requirements
 
-- **Linux Operating System**
+- **Linux Operating System (Debian, Ubuntu, or compatible)** with an X11 session.
 - **NVIDIA graphics card with CUDA 11 or 12 support**
 - **Installed NVIDIA drivers** and **CUDA Toolkit**
-- Python 3.8+ and `python3-venv` (or the equivalent for your distribution)
+- **Git** and the required build tools (`python3-pip`, `fakeroot`)
 - A working microphone
-- External tools (required for running, not for building):
-  - **X11**: `xclip` and `xdotool`
-  - **Wayland**: `wl-clipboard` and `wtype`
-  - **Notifications**: `libnotify` (package `libnotify-bin` or `notify-send`)
 
-## Installation (for Users)
+## Installation
 
-Download the latest `.AppImage` file from the [Releases](https://github.com/username/whisper-ctrl/releases) section. Then:
-1. Make the file executable: `chmod +x Whisper-Ctrl-*.AppImage`.
-2. Run the application by double-clicking it.
-3. To have the application start automatically, add it to your desktop environment's startup applications.
+This application **must be built from source**. The process is automated by a build script that creates a standard Debian (`.deb`) package, which you can then install on your system.
 
-## Building the AppImage (for Developers)
-
-The included `build.sh` script automates the entire process, from creating the environment to building the final file.
-
-### Prerequisites
-1.  **Clone the repository** and navigate into its directory.
-2.  **Ensure you have Python 3 and the `venv` package installed** on your system (e.g., `sudo apt install python3-venv` on Debian/Ubuntu).
-
-### Build Process
-The process is fully automated. Just run the following commands:
-
+#### Step 1: Clone the Repository
+First, open a terminal and clone this repository to your local machine:
 ```bash
-# First, make the script executable
-chmod +x build.sh
+git clone https://github.com/username/whisper-ctrl.git
+cd whisper-ctrl
+```
+*(Replace `username/whisper-ctrl` with the actual repository URL)*
 
-# Then, run it
-./build.sh
+#### Step 2: Install Build Dependencies
+Ensure you have the necessary tools to build the package. On Debian, Ubuntu, or Zorin OS, run:
+```bash
+sudo apt update
+sudo apt install git python3-pip fakeroot
 ```
 
-The script will automatically:
-- Create a `venv` virtual environment.
-- Install dependencies from `requirements.txt`.
-- Download the `linuxdeploy` and `appimagetool` utilities.
-- Build the AppImage file.
-- **Clean up after itself by removing all temporary files.**
+#### Step 3: Build the `.deb` Package
+The repository includes an automated build script. Make it executable and run it. This step does **not** require `sudo`.
+
+```bash
+# Make the script executable
+chmod +x build.sh
+
+# Run the build script
+./build.sh
+```
+The script will create a self-contained build environment, install all Python dependencies (like PyQt6, PyTorch, and faster-whisper), and package everything into a `.deb` file in the project's root directory. All temporary build files will be cleaned up automatically.
+
+#### Step 4: Install the Generated Package
+After the script finishes, you will find a new `whisper-ctrl_*.deb` file. Install it using `apt`, which will also handle any remaining runtime dependencies.
+```bash
+sudo apt install ./whisper-ctrl_*.deb
+```
 
 ## Usage
 
-1.  Anywhere in your system where you can input text, **quickly double-press the left Ctrl key**.
-2.  A "🎙️ Recording..." notification will appear. Start speaking.
-3.  When you're finished, **quickly double-press the left Ctrl key again**.
-4.  Wait for the "🧠 Processing..." notification. The transcription will be pasted at your cursor's position after a few seconds.
+1.  Anywhere in your system where you can input text, **quickly double-press a Ctrl key**.
+2.  A **red, pulsing circle** will appear next to your cursor. Start speaking.
+3.  When you're finished, **quickly double-press a Ctrl key again**.
+4.  The circle will change to a **blue, spinning indicator** while your speech is processed. The transcribed text will be pasted at your cursor's position after a few seconds.
+5.  To cancel recording or processing at any time, simply press the **`Esc` key**.
 
 ## Permissions
-For the global hotkeys to work, your user account must have permission to read input devices. This can be achieved by adding your user to the `input` group:
+For the global hotkeys to work, your user account must have permission to read input devices. This is a one-time setup step.
 ```bash
 sudo usermod -a -G input $USER
 ```
