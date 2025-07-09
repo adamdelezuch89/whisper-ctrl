@@ -59,7 +59,7 @@ Package: ${APP_NAME}
 Version: ${VERSION}
 Architecture: ${ARCH}
 Maintainer: Your Name <your.email@example.com>
-Depends: python3, xclip, xdotool, wl-clipboard, wtype, libnotify-bin, sounddevice
+Depends: python3, xclip, xdotool, wl-clipboard, wtype, libnotify-bin
 Description: Local GPU-accelerated speech-to-text dictation.
  Whisper-Ctrl is a lightweight voice dictation application for Linux that
  leverages the power of your local GPU for fast speech-to-text transcription.
