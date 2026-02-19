@@ -81,6 +81,16 @@ class SettingsWindow(QWidget):
         widget = QWidget()
         layout = QVBoxLayout()
 
+        # Error status label (hidden by default)
+        self.label_transcriber_error = QLabel()
+        self.label_transcriber_error.setWordWrap(True)
+        self.label_transcriber_error.setStyleSheet(
+            "QLabel { color: #cc0000; background-color: #ffe0e0; "
+            "border: 1px solid #cc0000; border-radius: 4px; padding: 8px; }"
+        )
+        self.label_transcriber_error.setVisible(False)
+        layout.addWidget(self.label_transcriber_error)
+
         # Backend selection
         backend_group = QGroupBox("Transcription Backend")
         backend_layout = QVBoxLayout()
@@ -89,8 +99,8 @@ class SettingsWindow(QWidget):
         self.radio_local.setToolTip("Use your local GPU for transcription. Free and private.")
         backend_layout.addWidget(self.radio_local)
 
-        self.radio_cloud = QRadioButton("OpenAI API (Cloud)")
-        self.radio_cloud.setToolTip("Use OpenAI's API for transcription. Requires API key and internet.")
+        self.radio_cloud = QRadioButton("External API (Cloud)")
+        self.radio_cloud.setToolTip("Use an external API for transcription. Supports OpenAI, Azure, and compatible providers.")
         backend_layout.addWidget(self.radio_cloud)
 
         backend_group.setLayout(backend_layout)
@@ -120,13 +130,23 @@ class SettingsWindow(QWidget):
         self.group_local.setLayout(local_layout)
         layout.addWidget(self.group_local)
 
-        # OpenAI API settings
-        self.group_cloud = QGroupBox("OpenAI API Configuration")
+        # API settings
+        self.group_cloud = QGroupBox("API Configuration")
         cloud_layout = QFormLayout()
+
+        self.combo_api_type = QComboBox()
+        self.combo_api_type.addItems(["OpenAI Compatible", "Azure AI Foundry"])
+        self.combo_api_type.setToolTip("OpenAI Compatible works with OpenAI, Groq, Together, and other providers")
+        self.combo_api_type.currentIndexChanged.connect(self._update_api_type_fields)
+        cloud_layout.addRow("API Type:", self.combo_api_type)
+
+        self.input_api_url = QLineEdit()
+        self.input_api_url.setToolTip("Custom base URL. Leave empty for default OpenAI endpoint.")
+        cloud_layout.addRow("API URL:", self.input_api_url)
 
         self.input_api_key = QLineEdit()
         self.input_api_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self.input_api_key.setPlaceholderText("sk-...")
+        self.input_api_key.setPlaceholderText("API key")
         cloud_layout.addRow("API Key:", self.input_api_key)
 
         self.btn_show_api_key = QPushButton("Show")
@@ -134,11 +154,23 @@ class SettingsWindow(QWidget):
         self.btn_show_api_key.clicked.connect(self._toggle_api_key_visibility)
         cloud_layout.addRow("", self.btn_show_api_key)
 
+        self.input_api_model = QLineEdit()
+        cloud_layout.addRow("Model / Deployment:", self.input_api_model)
+
+        self.label_api_version = QLabel("API Version:")
+        self.input_api_version = QLineEdit()
+        self.input_api_version.setText("2024-10-21")
+        self.input_api_version.setToolTip("Azure API version (e.g. 2024-10-21)")
+        cloud_layout.addRow(self.label_api_version, self.input_api_version)
+
         self.group_cloud.setLayout(cloud_layout)
         layout.addWidget(self.group_cloud)
 
         # Connect radio buttons to show/hide groups
         self.radio_local.toggled.connect(self._update_backend_visibility)
+
+        # Set initial API type field state
+        self._update_api_type_fields()
 
         layout.addStretch()
         widget.setLayout(layout)
@@ -247,6 +279,18 @@ class SettingsWindow(QWidget):
         self.group_local.setEnabled(is_local)
         self.group_cloud.setEnabled(not is_local)
 
+    def _update_api_type_fields(self):
+        """Update API config fields based on selected API type."""
+        is_azure = self.combo_api_type.currentIndex() == 1
+        self.label_api_version.setVisible(is_azure)
+        self.input_api_version.setVisible(is_azure)
+        if is_azure:
+            self.input_api_url.setPlaceholderText("https://your-resource.openai.azure.com")
+            self.input_api_model.setPlaceholderText("deployment-name")
+        else:
+            self.input_api_url.setPlaceholderText("https://api.openai.com/v1 (leave empty for default)")
+            self.input_api_model.setPlaceholderText("whisper-1")
+
     def _toggle_api_key_visibility(self):
         """Toggle API key visibility."""
         if self.btn_show_api_key.isChecked():
@@ -270,8 +314,14 @@ class SettingsWindow(QWidget):
         self.combo_device.setCurrentText(self.config.get("local.device", "cuda"))
         self.combo_compute_type.setCurrentText(self.config.get("local.compute_type", "float16"))
 
-        # OpenAI settings
-        self.input_api_key.setText(self.config.get("openai.api_key", ""))
+        # API settings
+        api_type = self.config.get("api.type", "openai")
+        self.combo_api_type.setCurrentIndex(1 if api_type == "azure" else 0)
+        self.input_api_key.setText(self.config.get("api.api_key", ""))
+        self.input_api_url.setText(self.config.get("api.api_url", ""))
+        self.input_api_model.setText(self.config.get("api.model", "whisper-1"))
+        self.input_api_version.setText(self.config.get("api.api_version", "2024-10-21"))
+        self._update_api_type_fields()
 
         # Audio
         self.combo_language.setCurrentText(self.config.get("audio.language", "pl"))
@@ -290,11 +340,16 @@ class SettingsWindow(QWidget):
 
         self._update_backend_visibility()
 
+    def set_transcriber_error(self, message: str):
+        """Show a transcriber initialization error message."""
+        self.label_transcriber_error.setText(f"⚠ Backend error: {message}")
+        self.label_transcriber_error.setVisible(True)
+
     def save_settings(self):
         """Save settings from UI to config."""
         try:
             # Backend
-            backend = "local" if self.radio_local.isChecked() else "openai"
+            backend = "local" if self.radio_local.isChecked() else "api"
             self.config.set("backend", backend, save=False)
 
             # Local settings
@@ -302,17 +357,20 @@ class SettingsWindow(QWidget):
             self.config.set("local.device", self.combo_device.currentText(), save=False)
             self.config.set("local.compute_type", self.combo_compute_type.currentText(), save=False)
 
-            # OpenAI settings
-            api_key = self.input_api_key.text().strip()
-            self.config.set("openai.api_key", api_key, save=False)
+            # API settings
+            api_type = "azure" if self.combo_api_type.currentIndex() == 1 else "openai"
+            self.config.set("api.type", api_type, save=False)
+            self.config.set("api.api_key", self.input_api_key.text().strip(), save=False)
+            self.config.set("api.api_url", self.input_api_url.text().strip(), save=False)
+            self.config.set("api.model", self.input_api_model.text().strip() or "whisper-1", save=False)
+            self.config.set("api.api_version", self.input_api_version.text().strip() or "2024-10-21", save=False)
 
-            # Validate OpenAI config if selected
-            if backend == "openai" and not self.config.validate_openai_config():
-                QMessageBox.warning(
-                    self,
-                    "Invalid API Key",
-                    "Please enter a valid OpenAI API key (starts with 'sk-')"
-                )
+            # Validate API config if selected
+            if backend == "api" and not self.config.validate_api_config():
+                msg = "Please enter a valid API key."
+                if api_type == "azure":
+                    msg += "\nAzure also requires an endpoint URL."
+                QMessageBox.warning(self, "Invalid API Configuration", msg)
                 return
 
             # Audio

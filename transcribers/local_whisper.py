@@ -8,8 +8,6 @@ import time
 from typing import Optional
 import numpy as np
 
-from faster_whisper import WhisperModel
-
 from .base import Transcriber, TranscriptionResult, TranscriptionError
 
 
@@ -41,12 +39,13 @@ class LocalWhisperTranscriber(Transcriber):
             "min_silence_duration_ms": 700,
         }
 
-        self.model: Optional[WhisperModel] = None
+        self.model = None
         self._load_model()
 
     def _load_model(self) -> None:
         """Load the Whisper model."""
         try:
+            from faster_whisper import WhisperModel
             print(f"🚀 Loading Whisper model '{self.model_size}' on {self.device}...")
             self.model = WhisperModel(
                 self.model_size,

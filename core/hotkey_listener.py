@@ -39,12 +39,18 @@ class HotkeyListener:
         self.on_escape = on_escape
 
         self.last_press_time = 0.0
+        self._key_released = True
         self.listener: Optional[keyboard.Listener] = None
 
     def _on_press(self, key):
         """Internal key press handler."""
         # Check for double-press of configured keys
         if key in self.keys:
+            # Ignore auto-repeat events (key held down without release)
+            if not self._key_released:
+                return
+            self._key_released = False
+
             current_time = time.monotonic()
             time_diff = current_time - self.last_press_time
             self.last_press_time = current_time
@@ -58,10 +64,15 @@ class HotkeyListener:
             if self.on_escape:
                 self.on_escape()
 
+    def _on_release(self, key):
+        """Internal key release handler."""
+        if key in self.keys:
+            self._key_released = True
+
     def start(self):
         """Start listening for hotkeys."""
         if self.listener is None:
-            self.listener = keyboard.Listener(on_press=self._on_press)
+            self.listener = keyboard.Listener(on_press=self._on_press, on_release=self._on_release)
             self.listener.start()
             print(f"👂 Listening for double-press of {self.keys}")
 
