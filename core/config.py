@@ -15,15 +15,18 @@ class ConfigManager:
     """Manages application configuration with JSON persistence."""
 
     DEFAULT_CONFIG = {
-        "backend": "local",  # "local" or "openai"
+        "backend": "local",  # "local" or "api"
         "local": {
             "model_size": "large-v3",
             "compute_type": "float16",
             "device": "cuda"  # "cuda" or "cpu"
         },
-        "openai": {
+        "api": {
+            "type": "openai",       # "openai" or "azure"
             "api_key": "",
-            "model": "whisper-1"
+            "api_url": "",          # empty = provider default URL
+            "model": "whisper-1",   # model name (openai) or deployment name (azure)
+            "api_version": "2024-10-21"  # azure only
         },
         "hotkey": {
             "type": "double_ctrl",  # "double_ctrl", "double_alt", "custom"
@@ -84,8 +87,26 @@ class ConfigManager:
             self._config = self.DEFAULT_CONFIG.copy()
             self._save()
 
+    def _migrate_config(self, loaded: Dict) -> Dict:
+        """Migrate old config formats to current structure."""
+        # Migrate old "openai" section to new "api" section
+        if "openai" in loaded and "api" not in loaded:
+            loaded["api"] = {
+                "type": "openai",
+                "api_key": loaded["openai"].get("api_key", ""),
+                "api_url": "",
+                "model": loaded["openai"].get("model", "whisper-1"),
+                "api_version": "2024-10-21"
+            }
+            if loaded.get("backend") == "openai":
+                loaded["backend"] = "api"
+            del loaded["openai"]
+            print("🔄 Migrated old 'openai' config to new 'api' format")
+        return loaded
+
     def _merge_with_defaults(self, loaded: Dict) -> Dict:
         """Merge loaded config with defaults to handle new keys."""
+        loaded = self._migrate_config(loaded)
         merged = self.DEFAULT_CONFIG.copy()
 
         def deep_update(base: Dict, updates: Dict) -> Dict:
@@ -176,15 +197,20 @@ class ConfigManager:
         """Mark the first run wizard as completed."""
         self.set("first_run", False)
 
-    def validate_openai_config(self) -> bool:
+    def validate_api_config(self) -> bool:
         """
-        Validate OpenAI configuration.
+        Validate external API configuration.
 
         Returns:
-            True if API key is set and appears valid
+            True if API key is set and API type is valid
         """
-        api_key = self.get("openai.api_key", "")
-        return bool(api_key and len(api_key) > 20 and api_key.startswith("sk-"))
+        api_key = self.get("api.api_key", "")
+        api_type = self.get("api.type", "openai")
+        if not api_key:
+            return False
+        if api_type == "azure" and not self.get("api.api_url", ""):
+            return False
+        return True
 
     def reset_to_defaults(self) -> None:
         """Reset configuration to default values."""

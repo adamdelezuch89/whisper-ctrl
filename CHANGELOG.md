@@ -2,6 +2,21 @@
 
 All notable changes to Whisper-Ctrl will be documented in this file.
 
+## [2.0.1] - 2026-02-19
+
+### 🐛 Bug Fixes
+- App no longer crashes on first run when CUDA/faster-whisper is unavailable
+- Lazy import of faster-whisper prevents crash at module load time
+- Hotkey listener ignores key auto-repeat events
+
+### ✨ Added
+- Desktop notifications and red X cursor indicator on transcription errors
+- Settings window auto-opens with error message when backend fails to initialize
+- Multi-provider API support: OpenAI-compatible (Groq, Together, etc.) and Azure AI Foundry
+- Automatic config migration from old `openai` to new `api` format
+
+---
+
 ## [2.0.0] - 2026-02-09
 
 ### 🚀 Major Refactoring

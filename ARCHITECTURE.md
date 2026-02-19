@@ -3,7 +3,7 @@
 ## Overview
 
 Whisper-Ctrl has been refactored to support:
-- **Multiple backends**: Local GPU (faster-whisper) and Cloud (OpenAI API)
+- **Multiple backends**: Local GPU (faster-whisper) and Cloud APIs (OpenAI, Azure, Groq, etc.)
 - **Cross-platform**: Linux (X11/Wayland) and Windows
 - **User-configurable**: JSON config file + Settings GUI
 - **Modular design**: Clean separation of concerns
@@ -15,7 +15,7 @@ Whisper-Ctrl has been refactored to support:
 │                     User Interface Layer                     │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
 │  │ Tray Icon    │  │ Settings GUI │  │ Feedback     │      │
-│  │ (System Tray)│  │ (PyQt6)      │  │ Widget       │      │
+│  │ (System Tray)│  │ (PySide6)      │  │ Widget       │      │
 │  └──────────────┘  └──────────────┘  └──────────────┘      │
 └─────────────────────────────────────────────────────────────┘
                            │
@@ -42,7 +42,7 @@ Whisper-Ctrl has been refactored to support:
 │ - JSON storage  │  │ │  whisper)   │ │  │ │  Wayland)   │ │
 │                 │  │ └─────────────┘ │  │ └─────────────┘ │
 │                 │  │ ┌─────────────┐ │  │ ┌─────────────┐ │
-│                 │  │ │ OpenAI API  │ │  │ │ Windows     │ │
+│                 │  │ │ Cloud API   │ │  │ │ Windows     │ │
 │                 │  │ │ (Cloud)     │ │  │ │ (pyperclip) │ │
 │                 │  │ └─────────────┘ │  │ └─────────────┘ │
 └─────────────────┘  └─────────────────┘  └─────────────────┘
@@ -59,7 +59,7 @@ Whisper-Ctrl has been refactored to support:
 - JSON-based configuration storage
 - Dot notation for nested keys (`config.get("local.model_size")`)
 - Automatic merging with defaults (handles new config keys)
-- Validation methods (e.g., `validate_openai_config()`)
+- Validation methods (e.g., `validate_api_config()`)
 - First-run detection
 
 **Configuration File Location**: `~/.config/whisper-ctrl/config.json`
@@ -69,7 +69,7 @@ Whisper-Ctrl has been refactored to support:
 from core.config import ConfigManager
 
 config = ConfigManager()
-backend = config.get("backend")  # "local" or "openai"
+backend = config.get("backend")  # "local" or "api"
 config.set("audio.language", "en")
 ```
 
@@ -133,21 +133,24 @@ class Transcriber(ABC):
 }
 ```
 
-#### `openai_api.py` - OpenAITranscriber
-**Purpose**: Cloud transcription using OpenAI Whisper API
+#### `api_transcriber.py` - ApiTranscriber
+**Purpose**: Cloud transcription via OpenAI-compatible APIs and Azure AI Foundry
 
 **Features**:
-- API-based transcription (no local GPU needed)
+- Multi-provider support (OpenAI, Azure, Groq, Together, any OpenAI-compatible API)
 - Automatic audio format conversion
 - Temp file management
-- Error handling and retry logic
+- Lazy import of `faster-whisper` (local backend loads cleanly without the package)
 
 **Configuration**:
 ```json
 {
-  "openai": {
-    "api_key": "sk-...",
-    "model": "whisper-1"
+  "api": {
+    "type": "openai",
+    "api_key": "your-key",
+    "api_url": "",
+    "model": "whisper-1",
+    "api_version": "2024-10-21"
   }
 }
 ```
@@ -158,7 +161,7 @@ class Transcriber(ABC):
 **Purpose**: GUI for configuration management
 
 **Tabs**:
-1. **Backend**: Choose Local GPU or OpenAI API
+1. **Backend**: Choose Local GPU or Cloud API (OpenAI / Azure / compatible)
 2. **Audio**: Language, VAD settings
 3. **Hotkey**: Activation key configuration
 4. **Advanced**: Notifications, widget offset
@@ -190,10 +193,10 @@ settings.show()
 ## Design Patterns Used
 
 ### 1. Strategy Pattern (Transcribers)
-Different transcription algorithms (Local/OpenAI) implement the same interface.
+Different transcription backends (Local/Cloud API) implement the same interface.
 
 **Benefits**:
-- Easy to add new backends (e.g., Azure, Google)
+- Easy to add new backends (e.g., Google Cloud Speech)
 - Switch backends at runtime
 - No code changes in the controller
 
@@ -278,7 +281,7 @@ One central place for all configuration.
 
 ```json
 {
-  "backend": "local",  // "local" or "openai"
+  "backend": "local",  // "local" or "api"
 
   "local": {
     "model_size": "large-v3",
@@ -286,9 +289,12 @@ One central place for all configuration.
     "device": "cuda"
   },
 
-  "openai": {
+  "api": {
+    "type": "openai",      // "openai" or "azure"
     "api_key": "",
-    "model": "whisper-1"
+    "api_url": "",          // custom base URL (empty = provider default)
+    "model": "whisper-1",   // model name or Azure deployment name
+    "api_version": "2024-10-21"  // Azure only
   },
 
   "hotkey": {
@@ -382,10 +388,10 @@ def create_text_injector():
 - **Transcription**: ~0.5-2s depending on audio length and model size
 - **VRAM Usage**: 1-4GB depending on model size
 
-### OpenAI API Backend
+### Cloud API Backend
 - **No Model Loading**: Instant startup
-- **Transcription**: 1-3s (depends on internet speed)
-- **Cost**: ~$0.006 per minute of audio
+- **Transcription**: 1-3s (depends on internet speed and provider)
+- **Cost**: Varies by provider
 
 ### Optimization Tips
 1. Use smaller models (base/small) for faster response

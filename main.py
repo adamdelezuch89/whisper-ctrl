@@ -30,7 +30,7 @@ from core.hotkey_listener import HotkeyListener
 from core.text_injector import create_text_injector
 from transcribers.base import Transcriber, TranscriptionError
 from transcribers.local_whisper import LocalWhisperTranscriber
-from transcribers.openai_api import OpenAITranscriber
+from transcribers.api_transcriber import ApiTranscriber
 from ui.feedback_widget import FeedbackWidget
 from ui.settings_window import SettingsWindow
 from ui.tray_icon import TrayIcon
@@ -46,6 +46,8 @@ class WhisperCtrl(QObject):
 
     # Signal emitted when application state changes
     state_changed = Signal(State)
+    # Signal emitted when an error occurs (carries error message)
+    error_occurred = Signal(str)
 
     def __init__(self, config: ConfigManager):
         """
@@ -57,6 +59,7 @@ class WhisperCtrl(QObject):
         super().__init__()
         self.config = config
         self.state = State.IDLE
+        self._transcriber_error: Optional[str] = None
 
         # Initialize components
         self._init_transcriber()
@@ -74,10 +77,18 @@ class WhisperCtrl(QObject):
         signal.signal(signal.SIGINT, self._handle_signal)
         signal.signal(signal.SIGTERM, self._handle_signal)
 
-        print(f"✅ Whisper-Ctrl initialized with {self.transcriber.get_name()}")
+        if self.transcriber is not None:
+            print(f"✅ Whisper-Ctrl initialized with {self.transcriber.get_name()}")
+        else:
+            print(f"⚠️ Whisper-Ctrl initialized without transcriber: {self._transcriber_error}")
 
     def _init_transcriber(self):
         """Initialize transcriber based on config."""
+        if self.config.is_first_run():
+            self.transcriber = None
+            self._transcriber_error = "First run - please configure your backend"
+            return
+
         backend = self.config.get("backend", "local")
 
         try:
@@ -93,23 +104,28 @@ class WhisperCtrl(QObject):
                     vad_parameters=vad_params
                 )
 
-            elif backend == "openai":
-                api_key = self.config.get("openai.api_key", "")
-                if not api_key:
-                    raise ValueError("OpenAI API key not configured")
+            elif backend == "api":
+                api_cfg = self.config.get("api", {})
+                if not api_cfg.get("api_key"):
+                    raise ValueError("API key not configured")
 
-                self.transcriber = OpenAITranscriber(
-                    api_key=api_key,
-                    model=self.config.get("openai.model", "whisper-1")
+                self.transcriber = ApiTranscriber(
+                    api_type=api_cfg.get("type", "openai"),
+                    api_key=api_cfg.get("api_key", ""),
+                    api_url=api_cfg.get("api_url", ""),
+                    model=api_cfg.get("model", "whisper-1"),
+                    api_version=api_cfg.get("api_version", "2024-10-21")
                 )
 
             else:
                 raise ValueError(f"Unknown backend: {backend}")
 
+            self._transcriber_error = None
+
         except Exception as e:
             print(f"❌ Failed to initialize transcriber: {e}")
-            print("   Check your configuration and try again.")
-            sys.exit(1)
+            self.transcriber = None
+            self._transcriber_error = str(e)
 
     def _create_hotkey_listener(self) -> HotkeyListener:
         """Create hotkey listener from config."""
@@ -139,6 +155,12 @@ class WhisperCtrl(QObject):
 
     def _handle_double_press(self):
         """Handle double-press of hotkey."""
+        if self.transcriber is None:
+            print(f"⚠️ Transcriber not available: {self._transcriber_error}")
+            print("   Opening settings...")
+            QTimer.singleShot(0, self.open_settings)
+            return
+
         if self.state == State.PROCESSING:
             print("⏳ Please wait, processing in progress...")
             return
@@ -228,8 +250,10 @@ class WhisperCtrl(QObject):
 
         except TranscriptionError as e:
             print(f"❌ Transcription error: {e}")
+            self.error_occurred.emit(str(e))
         except Exception as e:
             print(f"❌ Unexpected error: {e}")
+            self.error_occurred.emit(str(e))
         finally:
             # Always return to IDLE state
             self.state = State.IDLE
@@ -245,21 +269,30 @@ class WhisperCtrl(QObject):
         self.settings_window.raise_()
         self.settings_window.activateWindow()
 
+    def _open_settings_with_error(self):
+        """Open settings window and show transcriber error if any."""
+        self.open_settings()
+        if self._transcriber_error and self.settings_window:
+            self.settings_window.set_transcriber_error(self._transcriber_error)
+
     def _on_settings_changed(self):
         """Handle settings changes - reinitialize transcriber."""
         print("⚙️ Settings changed, reinitializing...")
 
         # Reinitialize transcriber
-        old_name = self.transcriber.get_name()
+        old_name = self.transcriber.get_name() if self.transcriber else None
         self._init_transcriber()
-        new_name = self.transcriber.get_name()
+        new_name = self.transcriber.get_name() if self.transcriber else None
 
-        if old_name != new_name:
-            print(f"✅ Switched from {old_name} to {new_name}")
+        if self.transcriber is None:
+            print(f"⚠️ Transcriber still not available: {self._transcriber_error}")
+        elif old_name != new_name:
+            print(f"✅ Switched from {old_name or 'none'} to {new_name}")
 
         # Update tray tooltip
         if self.tray_icon:
-            self.tray_icon.set_tooltip(f"Whisper-Ctrl ({new_name})")
+            tooltip = f"Whisper-Ctrl ({new_name})" if new_name else "Whisper-Ctrl (not configured)"
+            self.tray_icon.set_tooltip(tooltip)
 
         # Recreate hotkey listener if keys changed
         self.hotkey_listener.stop()
@@ -277,22 +310,27 @@ class WhisperCtrl(QObject):
         self.tray_icon = TrayIcon(app)
         self.tray_icon.settings_requested.connect(self.open_settings)
         self.tray_icon.quit_requested.connect(app.quit)
-        self.tray_icon.set_tooltip(f"Whisper-Ctrl ({self.transcriber.get_name()})")
+
+        transcriber_name = self.transcriber.get_name() if self.transcriber else "not configured"
+        self.tray_icon.set_tooltip(f"Whisper-Ctrl ({transcriber_name})")
 
         # Start hotkey listener
         self.hotkey_listener.start()
 
-        # Show first-run setup if needed
+        # Show settings on first run or if transcriber failed to initialize
         if self.config.is_first_run():
             print("👋 First run detected - opening settings...")
             self.config.mark_first_run_complete()
-            QTimer.singleShot(500, self.open_settings)
+            QTimer.singleShot(500, self._open_settings_with_error)
+        elif self.transcriber is None:
+            print("⚠️ Transcriber not available - opening settings...")
+            QTimer.singleShot(500, self._open_settings_with_error)
 
         # Print startup info
         backend = self.config.get("backend", "local")
         print("🚀 Whisper-Ctrl is running")
         print(f"   Backend: {backend}")
-        print(f"   Transcriber: {self.transcriber.get_name()}")
+        print(f"   Transcriber: {transcriber_name}")
         print(f"   Hotkey: Double-press {self.config.get('hotkey.keys')}")
         print("   Press Escape to cancel recording/processing")
         print("   Right-click tray icon for settings")
@@ -325,7 +363,13 @@ def main():
         else:  # IDLE
             feedback_widget.hide_feedback()
 
+    def on_error(message: str):
+        feedback_widget.show_error()
+        if whisper_ctrl.tray_icon:
+            whisper_ctrl.tray_icon.show_message("Whisper-Ctrl Error", message)
+
     whisper_ctrl.state_changed.connect(on_state_changed)
+    whisper_ctrl.error_occurred.connect(on_error)
 
     # Timer to make feedback widget follow cursor
     cursor_follower = QTimer()

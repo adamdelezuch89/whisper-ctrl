@@ -26,6 +26,7 @@ class FeedbackWidget(QWidget):
         HIDDEN = "hidden"
         RECORDING = "recording"
         PROCESSING = "processing"
+        ERROR = "error"
 
     def __init__(self, offset_x: int = 2, offset_y: int = 2):
         """
@@ -64,6 +65,12 @@ class FeedbackWidget(QWidget):
         self.spinner_timer.timeout.connect(self.update)
         self.spinner_angle = 0
 
+        # Error animation (flash then auto-hide)
+        self.error_timer = QTimer(self)
+        self.error_timer.setSingleShot(True)
+        self.error_timer.timeout.connect(self.hide_feedback)
+        self.error_opacity = 255
+
     def set_offset(self, offset_x: int, offset_y: int):
         """
         Update cursor offset.
@@ -91,6 +98,16 @@ class FeedbackWidget(QWidget):
             self.spinner_timer.start(15)  # Spinner speed (15ms ≈ 67 FPS)
         self.show()
 
+    def show_error(self):
+        """Show error indicator (red X that auto-hides after 3s)."""
+        self.pulse_timer.stop()
+        self.spinner_timer.stop()
+        self.mode = self.Mode.ERROR
+        self.error_opacity = 255
+        self.show()
+        self.update()
+        self.error_timer.start(3000)
+
     def hide_feedback(self):
         """Hide the feedback widget."""
         self.mode = self.Mode.HIDDEN
@@ -116,6 +133,8 @@ class FeedbackWidget(QWidget):
             self._paint_recording(painter)
         elif self.mode == self.Mode.PROCESSING:
             self._paint_processing(painter)
+        elif self.mode == self.Mode.ERROR:
+            self._paint_error(painter)
 
     def _paint_recording(self, painter: QPainter):
         """Paint the recording animation (pulsing red circle)."""
@@ -141,3 +160,16 @@ class FeedbackWidget(QWidget):
 
         rect = self.rect().adjusted(10, 10, -10, -10)
         painter.drawArc(rect, self.spinner_angle * 16, 90 * 16)
+
+    def _paint_error(self, painter: QPainter):
+        """Paint the error indicator (red X)."""
+        pen = QPen(QColor(255, 50, 50, self.error_opacity))
+        pen.setWidth(4)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+
+        # Draw X
+        margin = 12
+        w, h = self.width(), self.height()
+        painter.drawLine(margin, margin, w - margin, h - margin)
+        painter.drawLine(w - margin, margin, margin, h - margin)
