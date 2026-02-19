@@ -8,7 +8,7 @@ Whisper-Ctrl is a powerful voice dictation application that works on **Linux** (
 
 - **🎯 Multi-Backend Support**
   - Local GPU transcription (faster-whisper) - Private & Free
-  - OpenAI API transcription - High accuracy, cloud-based
+  - Cloud API transcription (OpenAI, Azure, Groq, Together, etc.)
 
 - **🖥️ Cross-Platform**
   - Linux with X11 or Wayland
@@ -35,8 +35,11 @@ Whisper-Ctrl is a powerful voice dictation application that works on **Linux** (
 - **NVIDIA Drivers** and **CUDA Toolkit** installed
 - **4-6 GB VRAM** (depending on model size)
 
-### For OpenAI API Backend
-- **OpenAI API Key** ([Get one here](https://platform.openai.com/api-keys))
+### For Cloud API Backend
+- **API Key** from one of the supported providers:
+  - [OpenAI](https://platform.openai.com/api-keys)
+  - [Azure AI Foundry](https://ai.azure.com/)
+  - [Groq](https://console.groq.com/keys), [Together](https://api.together.xyz/), or any OpenAI-compatible API
 - **Internet connection**
 - No GPU required
 
@@ -97,7 +100,7 @@ On first run, a settings window will appear to configure your preferences.
 
 Right-click the system tray icon and select "Settings" to access:
 
-- **Backend Tab**: Switch between Local GPU and OpenAI API
+- **Backend Tab**: Switch between Local GPU and Cloud API (OpenAI / Azure / compatible)
 - **Audio Tab**: Configure language, VAD settings
 - **Hotkey Tab**: Customize activation hotkey (future)
 - **Advanced Tab**: Notification settings, widget position
@@ -114,9 +117,12 @@ Configuration is stored at `~/.config/whisper-ctrl/config.json`:
     "compute_type": "float16",
     "device": "cuda"
   },
-  "openai": {
+  "api": {
+    "type": "openai",
     "api_key": "",
-    "model": "whisper-1"
+    "api_url": "",
+    "model": "whisper-1",
+    "api_version": "2024-10-21"
   },
   "audio": {
     "language": "pl",
@@ -144,7 +150,7 @@ whisper-ctrl/
 │   └── text_injector.py   # Cross-platform text paste
 ├── transcribers/
 │   ├── local_whisper.py   # Local GPU backend
-│   └── openai_api.py      # OpenAI API backend
+│   └── api_transcriber.py # Cloud API backend (OpenAI/Azure/compatible)
 └── ui/
     ├── feedback_widget.py # Cursor indicator
     ├── settings_window.py # Settings GUI
@@ -155,17 +161,36 @@ whisper-ctrl/
 
 ### Switching Backends
 
-```python
-# Via Settings GUI: Backend tab → Select "OpenAI API" → Enter API key
-
-# Via config file:
+**OpenAI / OpenAI-compatible (Groq, Together, etc.)**:
+```json
 {
-  "backend": "openai",
-  "openai": {
-    "api_key": "sk-your-api-key-here"
+  "backend": "api",
+  "api": {
+    "type": "openai",
+    "api_key": "your-api-key",
+    "api_url": "",
+    "model": "whisper-1"
   }
 }
 ```
+
+For non-OpenAI providers, set `api_url` to the provider's base URL (e.g. `https://api.groq.com/openai/v1`).
+
+**Azure AI Foundry**:
+```json
+{
+  "backend": "api",
+  "api": {
+    "type": "azure",
+    "api_key": "your-azure-key",
+    "api_url": "https://your-resource.openai.azure.com",
+    "model": "your-deployment-name",
+    "api_version": "2024-10-21"
+  }
+}
+```
+
+> **Azure endpoint format**: Use only the base URL (`https://<resource>.openai.azure.com`), without any path suffix. The SDK builds the full URL automatically. The `model` field should match your **deployment name** in Azure Portal, not the model name.
 
 ### Custom Model Sizes (Local)
 
@@ -202,10 +227,11 @@ sudo apt install wl-clipboard wtype
 - Check PyTorch CUDA: `python -c "import torch; print(torch.cuda.is_available())"`
 - Try CPU mode: Change `"device": "cuda"` to `"device": "cpu"` in config
 
-### "Invalid API key" (OpenAI)
-- Get key from: https://platform.openai.com/api-keys
-- Must start with `sk-`
-- Add billing information to OpenAI account
+### "Invalid API key" / "API error"
+- **OpenAI**: Get key from https://platform.openai.com/api-keys, ensure billing is active
+- **Azure**: Use the key from Azure Portal → your resource → Keys and Endpoint
+- **Azure 404**: Make sure `api_url` is just `https://<resource>.openai.azure.com` (no path) and `model` matches the deployment name exactly
+- **429 quota exceeded**: Check your billing/plan with the API provider
 
 ### Hotkeys not working
 ```bash
@@ -278,12 +304,12 @@ pyinstaller main.py --name "Whisper-Ctrl" --onedir --windowed ...
 | Backend | Startup Time | Transcription Speed | Cost | Privacy |
 |---------|-------------|-------------------|------|---------|
 | **Local GPU** | ~5-10s (first run) | 0.5-2s per audio | Free | ✅ 100% Private |
-| **OpenAI API** | Instant | 1-3s per audio | ~$0.006/min | ⚠️ Cloud-based |
+| **Cloud API** | Instant | 1-3s per audio | Varies by provider | ⚠️ Cloud-based |
 
 ## 🤝 Contributing
 
 Contributions are welcome! Areas for improvement:
-- Additional transcription backends (Google, Azure)
+- Additional transcription backends (Google Cloud Speech)
 - First-run wizard UI
 - Custom hotkey configuration UI
 - Audio feedback (sound effects)

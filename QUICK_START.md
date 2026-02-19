@@ -4,7 +4,7 @@
 
 Your Whisper-Ctrl has been refactored with a modular architecture that supports:
 
-✅ **Hybrid Backend**: Switch between Local GPU and OpenAI Cloud
+✅ **Hybrid Backend**: Switch between Local GPU and Cloud APIs (OpenAI, Azure, Groq, etc.)
 ✅ **Cross-Platform**: Works on Linux (X11/Wayland) and Windows
 ✅ **Settings GUI**: Configure everything through a user-friendly interface
 ✅ **System Tray**: Quick access from tray icon
@@ -20,7 +20,7 @@ whisper-ctrl/
 ├── transcribers/
 │   ├── base.py             # 🎯 Transcriber interface
 │   ├── local_whisper.py    # 🖥️ Local GPU implementation
-│   └── openai_api.py       # ☁️ OpenAI Cloud implementation
+│   └── api_transcriber.py  # ☁️ Cloud API implementation (OpenAI/Azure/compatible)
 ├── ui/
 │   ├── settings_window.py  # 🎨 Settings GUI
 │   └── tray_icon.py        # 🔔 System tray icon
@@ -101,7 +101,7 @@ model_size = config.get("local.model_size")  # "large-v3"
 language = config.get("audio.language")       # "pl"
 
 # Change settings
-config.set("backend", "openai")
+config.set("backend", "api")
 config.set("audio.language", "en")
 ```
 
@@ -142,13 +142,13 @@ segments, _ = self.model.transcribe(audio_float32, ...)
 **After** (multiple backends, same interface):
 ```python
 from transcribers.local_whisper import LocalWhisperTranscriber
-from transcribers.openai_api import OpenAITranscriber
+from transcribers.api_transcriber import ApiTranscriber
 
 # Choose backend
 if backend == "local":
     transcriber = LocalWhisperTranscriber(model_size="large-v3")
 else:
-    transcriber = OpenAITranscriber(api_key="sk-...")
+    transcriber = ApiTranscriber(api_key="your-key")
 
 # Same interface for both!
 result = transcriber.transcribe(audio_data, language="pl")
@@ -171,7 +171,7 @@ settings.show()
 ```
 
 **Features**:
-- 🎨 **Backend Tab**: Switch Local ↔ OpenAI, model size, API key
+- 🎨 **Backend Tab**: Switch Local ↔ Cloud API, model size, API key, provider type
 - 🎤 **Audio Tab**: Language, VAD settings
 - ⌨️ **Hotkey Tab**: Activation hotkey (future enhancement)
 - 🔧 **Advanced Tab**: Notifications, widget position
@@ -283,9 +283,12 @@ After first run, you'll find:
     "compute_type": "float16",
     "device": "cuda"
   },
-  "openai": {
+  "api": {
+    "type": "openai",
     "api_key": "",
-    "model": "whisper-1"
+    "api_url": "",
+    "model": "whisper-1",
+    "api_version": "2024-10-21"
   },
   "audio": {
     "language": "pl",
@@ -325,10 +328,10 @@ sudo apt install wl-clipboard wtype
 pip install openai
 ```
 
-### "Invalid API key" when using OpenAI
-- Get key from: https://platform.openai.com/api-keys
-- Must start with `sk-`
-- Enter in Settings → Backend → OpenAI API Configuration
+### "Invalid API key" when using Cloud API
+- **OpenAI**: Get key from https://platform.openai.com/api-keys
+- **Azure**: Use key from Azure Portal → Keys and Endpoint
+- Enter in Settings → Backend → API Configuration
 
 ### Windows: "Access denied" for keyboard library
 - May need to run as administrator for global hotkeys
@@ -346,7 +349,7 @@ pip install openai
 | Feature | Before | After |
 |---------|--------|-------|
 | **Configuration** | Hardcoded constants | JSON file + GUI |
-| **Backends** | Local only | Local + OpenAI (extensible) |
+| **Backends** | Local only | Local + Cloud APIs (OpenAI, Azure, Groq, etc.) |
 | **Platforms** | Linux X11 only | Linux (X11/Wayland) + Windows |
 | **Settings** | Edit code | Settings GUI |
 | **UI** | Minimal | Tray icon + Settings window |
